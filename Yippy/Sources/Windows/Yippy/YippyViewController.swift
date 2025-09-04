@@ -121,6 +121,7 @@ class YippyViewController: NSViewController {
         bindHotKeyToYippyWindow(YippyHotKeys.cmd9, disposeBag: disposeBag)
         bindHotKeyToYippyWindow(YippyHotKeys.ctrlDelete, disposeBag: disposeBag)
         bindHotKeyToYippyWindow(YippyHotKeys.ctrlSpace, disposeBag: disposeBag)
+        bindHotKeyToYippyWindow(YippyHotKeys.cmdBackslash, disposeBag: disposeBag)
         
         searchBar.resignFirstResponder()
     }
