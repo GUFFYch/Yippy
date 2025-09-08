@@ -81,7 +81,7 @@ class YippyViewController: NSViewController {
         YippyHotKeys.ctrlAltCmdUpArrow.onDown { State.main.panelPosition.accept(.top) }
         YippyHotKeys.ctrlDelete.onDown(deleteSelected)
         YippyHotKeys.ctrlSpace.onDown(togglePreview)
-//        YippyHotKeys.cmdBackslash.onDown(focusSearchBar)
+        YippyHotKeys.cmdBackslash.onDown(focusSearchBar)
         
         // Paste hot keys
         YippyHotKeys.cmd0.onDown { self.shortcutPressed(key: 0) }
