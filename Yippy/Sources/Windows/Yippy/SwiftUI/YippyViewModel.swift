@@ -25,6 +25,15 @@ class YippyViewModel {
     var searchBarValue: String = ""
     var itemCountLabel: String = ""
     var isSearchBarFocused: Bool = false
+    var isVimMode: Bool = false
+    
+    // Vim mode timing tracking
+    private var jKeyPressTime: Date?
+    private var lastTypingTime: Date?
+    private let vimModeActivationDelay: TimeInterval = 0.1 // 100ms
+    private let typingCooldownTime: TimeInterval = 0.5 // 500ms cooldown after typing
+    private var pendingJTimer: Timer?
+    private var shouldInsertPendingJ = false
     
     var yippyHistory = YippyHistory(history: State.main.history, items: [])
     
@@ -38,8 +47,12 @@ class YippyViewModel {
     var itemGroups = BehaviorRelay<[String]>(value: ["Clipboard", "Favourites", "Clipboard", "Favourites", "Clipboard", "Favourites"])
     
     var isRichText = Settings.main.showsRichText
-    
+
     private(set) var selectedItem: HistoryItem?
+    
+    deinit {
+        cancelDelayedJInsertion()
+    }
     
     private let results = BehaviorRelay(value: Results(items: [], isSearchResult: false))
     private let selected = BehaviorRelay<Int?>(value: nil)
@@ -55,7 +68,7 @@ class YippyViewModel {
             results,
             selected.distinctUntilChanged().withPrevious(startWith: nil)
         )
-        .observe(on: MainScheduler.instance)
+        .observe(on: MainScheduler.asyncInstance)
         .subscribe(onNext: onAllChange)
         .disposed(by: disposeBag)
         
@@ -251,6 +264,156 @@ class YippyViewModel {
     func focusSearchBar() {
         NSApp.activate(ignoringOtherApps: true)
         self.isSearchBarFocused = true
+    }
+    
+    // MARK: - Vim Mode Functions
+    
+    func onSearchFieldTyping() {
+        lastTypingTime = Date()
+        // Exit vim mode when user starts typing in search field
+        if isVimMode && isSearchBarFocused {
+            isVimMode = false
+        }
+    }
+    
+    func handleKeyPress(_ key: String) -> Bool {
+        let now = Date()
+        
+        // Handle pending j insertion first
+        if shouldInsertPendingJ {
+            shouldInsertPendingJ = false
+            pendingJTimer?.invalidate()
+            pendingJTimer = nil
+        }
+        
+        // Special handling for vim mode activation (jk sequence)
+        if key == "j" && !isVimMode {
+            // Check if we're in a typing cooldown period for j key
+            if let lastTyping = lastTypingTime, now.timeIntervalSince(lastTyping) < typingCooldownTime {
+                print("🔧 'j' key ignored - in typing cooldown")
+                return false
+            }
+            
+            jKeyPressTime = now
+            print("🔧 'j' pressed - waiting for 'k' within \(vimModeActivationDelay * 1000)ms")
+            
+            // If search bar is focused, delay the insertion of 'j' to see if 'k' follows
+            if isSearchBarFocused {
+                scheduleDelayedJInsertion()
+                return true // Consume the event temporarily
+            } else {
+                // Not in search bar, just consume to prevent any action
+                return true
+            }
+        }
+        
+        if key == "k" && !isVimMode {
+            if let jTime = jKeyPressTime, now.timeIntervalSince(jTime) <= vimModeActivationDelay {
+                // jk pressed within the time window - enter vim mode
+                print("🔧 'jk' sequence detected - entering vim mode")
+                cancelDelayedJInsertion() // Cancel the pending j insertion
+                enterVimMode()
+                jKeyPressTime = nil
+                return true // Always consume this k to prevent it from going to search
+            }
+            jKeyPressTime = nil
+        }
+        
+        // Handle vim mode keys
+        if isVimMode {
+            switch key {
+            case "j":
+                print("🔧 'j' pressed in vim mode - moving down")
+                goToNextItem()
+                return true
+                
+            case "k":
+                print("🔧 'k' pressed in vim mode - moving up") 
+                goToPreviousItem()
+                return true
+                
+            case "i":
+                print("🔧 'i' pressed in vim mode - exiting to insert mode")
+                exitVimMode()
+                return true
+                
+            default:
+                // In vim mode, don't let other keys through to search field
+                return true
+            }
+        }
+        
+        // Not in vim mode and not a vim activation sequence
+        if isSearchBarFocused {
+            print("🔧 Key '\(key)' passed through to search bar")
+            return false
+        }
+        
+        // Reset j key timing for other keys when not in search
+        if jKeyPressTime != nil && key != "j" && key != "k" {
+            print("🔧 '\(key)' pressed - resetting 'j' timing")
+            jKeyPressTime = nil
+            cancelDelayedJInsertion()
+        }
+        
+        return false
+    }
+    
+    func enterVimMode() {
+        guard !isVimMode else { 
+            print("🔧 Already in vim mode")
+            return 
+        }
+        print("🔧 Entering vim mode")
+        isVimMode = true
+        // Unfocus search bar when entering vim mode
+        if isSearchBarFocused {
+            isSearchBarFocused = false
+            print("🔧 Unfocused search bar when entering vim mode")
+        }
+    }
+    
+    func exitVimMode() {
+        guard isVimMode else { 
+            print("🔧 Not in vim mode, cannot exit")
+            return 
+        }
+        print("🔧 Exiting vim mode")
+        isVimMode = false
+        // Focus search bar when exiting vim mode with 'i'
+        focusSearchBar()
+    }
+    
+    // MARK: - Delayed J Insertion
+    
+    private func scheduleDelayedJInsertion() {
+        cancelDelayedJInsertion() // Cancel any existing timer
+        shouldInsertPendingJ = true
+        
+        pendingJTimer = Timer.scheduledTimer(withTimeInterval: vimModeActivationDelay, repeats: false) { [weak self] _ in
+            guard let self = self else { return }
+            if self.shouldInsertPendingJ {
+                print("🔧 Delayed insertion of 'j' - no 'k' detected within timeout")
+                DispatchQueue.main.async {
+                    self.insertJIntoSearchField()
+                }
+                self.shouldInsertPendingJ = false
+                self.jKeyPressTime = nil
+            }
+        }
+    }
+    
+    private func cancelDelayedJInsertion() {
+        pendingJTimer?.invalidate()
+        pendingJTimer = nil
+        shouldInsertPendingJ = false
+    }
+    
+    private func insertJIntoSearchField() {
+        guard isSearchBarFocused else { return }
+        print("🔧 Inserting delayed 'j' into search field")
+        searchBarValue += "j"
+        runSearch()
     }
     
     func runSearch() {
