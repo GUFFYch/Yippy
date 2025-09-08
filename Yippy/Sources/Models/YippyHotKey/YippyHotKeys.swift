@@ -25,7 +25,8 @@ struct YippyHotKeys {
     static var ctrlAltCmdUpArrow = YippyHotKey(key: .upArrow, modifiers: [.control, .option, .command])
     static var ctrlDelete = YippyHotKey(key: .delete, modifiers: [.control])
     static var space = YippyHotKey(key: .space, modifiers: [])
-    static var cmdBackslash = YippyHotKey(key: .backslash, modifiers: [.command])
+    // Disabled ⌘\ hotkey to prevent conflicts
+    static var cmdBackslash = YippyHotKey(key: .a, modifiers: [.control, .option, .command, .shift])
     
     static var cmd0 = YippyHotKey(key: .zero, modifiers: [.command])
     static var cmd1 = YippyHotKey(key: .one, modifiers: [.command])
